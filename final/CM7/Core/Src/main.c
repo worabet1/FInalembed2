@@ -319,7 +319,7 @@ int main(void) {
 			if (state == 4) {
 				if (setRFID == 1) {
 					write = 1;
-					setpassword = 0;
+					setRFID = 0;
 					state = 0;
 				} else if (setpassword == 3) {
 					if (password[0] == verify[0] && password[1] == verify[1]

@@ -69,8 +69,14 @@ void Error_Handler(void);
 #define STLINK_TX_GPIO_Port GPIOD
 #define USB_OTG_FS_PWR_EN_Pin GPIO_PIN_10
 #define USB_OTG_FS_PWR_EN_GPIO_Port GPIOD
+#define LCDcs_Pin GPIO_PIN_14
+#define LCDcs_GPIO_Port GPIOD
+#define LCDc_d_Pin GPIO_PIN_15
+#define LCDc_d_GPIO_Port GPIOD
 #define USB_OTG_FS_OVCR_Pin GPIO_PIN_7
 #define USB_OTG_FS_OVCR_GPIO_Port GPIOG
+#define LCDreset_Pin GPIO_PIN_9
+#define LCDreset_GPIO_Port GPIOG
 #define LD2_Pin GPIO_PIN_1
 #define LD2_GPIO_Port GPIOE
 /* USER CODE BEGIN Private defines */

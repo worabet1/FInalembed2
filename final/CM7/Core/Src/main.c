@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2022 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2022 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -22,7 +22,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "ST7735.h"
+#include "GFX_FUNCTIONS.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -71,6 +72,9 @@ ETH_TxPacketConfig TxConfig;
 
 ETH_HandleTypeDef heth;
 
+SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef hdma_spi1_tx;
+
 UART_HandleTypeDef huart3;
 
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
@@ -82,14 +86,14 @@ int x1, x2, x3, x4;
 int i = 0;
 int state = 0;
 int password[4] = { -16, -16, -16, -16 };
-int key[4] = {0,0,0,0};
+int key[4] = { 0, 0, 0, 0 };
 int press[2];
 int lock = 0;
 int setpassword = 0;
-int verify[4] = {0,0,0,0};
+int verify[4] = { 0, 0, 0, 0 };
 int findcard;
 int cardstr[16];
-char numbercar[7] ={'a',' ','a',' ','a',' ','a'} ;
+char numbercar[7] = { 'a', ' ', 'a', ' ', 'a', ' ', 'a' };
 //Button TimeStamp
 uint32_t ButtonMatrixTimestamp = 0;
 /* USER CODE END PV */
@@ -99,10 +103,12 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_ETH_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_DMA_Init(void);
+static void MX_SPI1_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
 /* USER CODE BEGIN PFP */
 void ButtonMatrixUpdate();
-int Button(ButtonMatrixState);
+int Button( ButtonMatrixState);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -120,17 +126,17 @@ int main(void)
 
   /* USER CODE END 1 */
 /* USER CODE BEGIN Boot_Mode_Sequence_0 */
-  int32_t timeout;
+	int32_t timeout;
 /* USER CODE END Boot_Mode_Sequence_0 */
 
 /* USER CODE BEGIN Boot_Mode_Sequence_1 */
-  /* Wait until CPU2 boots and enters in stop mode or timeout*/
-  timeout = 0xFFFF;
-  while((__HAL_RCC_GET_FLAG(RCC_FLAG_D2CKRDY) != RESET) && (timeout-- > 0));
-  if ( timeout < 0 )
-  {
-  Error_Handler();
-  }
+	/* Wait until CPU2 boots and enters in stop mode or timeout*/
+	timeout = 0xFFFF;
+	while ((__HAL_RCC_GET_FLAG(RCC_FLAG_D2CKRDY) != RESET) && (timeout-- > 0))
+		;
+	if (timeout < 0) {
+		Error_Handler();
+	}
 /* USER CODE END Boot_Mode_Sequence_1 */
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -144,21 +150,21 @@ int main(void)
   /* Configure the system clock */
   SystemClock_Config();
 /* USER CODE BEGIN Boot_Mode_Sequence_2 */
-/* When system initialization is finished, Cortex-M7 will release Cortex-M4 by means of
-HSEM notification */
-/*HW semaphore Clock enable*/
-__HAL_RCC_HSEM_CLK_ENABLE();
-/*Take HSEM */
-HAL_HSEM_FastTake(HSEM_ID_0);
-/*Release HSEM in order to notify the CPU2(CM4)*/
-HAL_HSEM_Release(HSEM_ID_0,0);
-/* wait until CPU2 wakes up from stop mode */
-timeout = 0xFFFF;
-while((__HAL_RCC_GET_FLAG(RCC_FLAG_D2CKRDY) == RESET) && (timeout-- > 0));
-if ( timeout < 0 )
-{
-Error_Handler();
-}
+	/* When system initialization is finished, Cortex-M7 will release Cortex-M4 by means of
+	 HSEM notification */
+	/*HW semaphore Clock enable*/
+	__HAL_RCC_HSEM_CLK_ENABLE();
+	/*Take HSEM */
+	HAL_HSEM_FastTake(HSEM_ID_0);
+	/*Release HSEM in order to notify the CPU2(CM4)*/
+	HAL_HSEM_Release(HSEM_ID_0, 0);
+	/* wait until CPU2 wakes up from stop mode */
+	timeout = 0xFFFF;
+	while ((__HAL_RCC_GET_FLAG(RCC_FLAG_D2CKRDY) == RESET) && (timeout-- > 0))
+		;
+	if (timeout < 0) {
+		Error_Handler();
+	}
 /* USER CODE END Boot_Mode_Sequence_2 */
 
   /* USER CODE BEGIN SysInit */
@@ -169,104 +175,109 @@ Error_Handler();
   MX_GPIO_Init();
   MX_ETH_Init();
   MX_USART3_UART_Init();
+  MX_DMA_Init();
+  MX_SPI1_Init();
   MX_USB_OTG_FS_PCD_Init();
   /* USER CODE BEGIN 2 */
-
+	ST7735_Init(2);
+	fillScreen(BLACK);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-	  ButtonMatrixUpdate();
-	  		press[0] = ButtonMatrixState;
-	  		if (press[0] != press[1] && press[0] != 0) {
-	  			if (state == 0) {
-	  				if (ButtonMatrixState != 0b100000000000) {
-	  					password[0] = Button(ButtonMatrixState);
-	  					state = 1;
-	  				}
-	  			} else if (state == 1) {
-	  				if (ButtonMatrixState == 0b100000000000) {
-	  					password[0] = -16;
-	  					state = 0;
-	  				} else {
-	  					password[1] = Button(ButtonMatrixState);
-	  					state = 2;
-	  				}
-	  			} else if (state == 2) {
-	  				if (ButtonMatrixState == 0b100000000000) {
-	  					password[1] = -16;
-	  					state = 1;
-	  				} else {
-	  					password[2] = Button(ButtonMatrixState);
-	  					state = 3;
-	  				}
-	  			} else if (state == 3) {
-	  				if (ButtonMatrixState == 0b100000000000) {
-	  					password[2] = -16;
-	  					state = 2;
-	  				} else {
-	  					password[3] = Button(ButtonMatrixState);
-	  					state = 4;
-	  				}
-	  			}
-	  			if (state == 4) {
-	  				if (setpassword ==3){
-	  					if(password[0] == verify[0] &&password[1] == verify[1] &&password[2] == verify[2] &&password[3] == verify[3]){
-	  						key[0] = verify[0];
-	  						key[1] = verify[1];
-	  						key[2] = verify[2];
-	  						key[3] = verify[3];
-	  					}
-	  					setpassword = 0;
-	  					state = 0;
-	  				}
-	  				else if (setpassword == 2){
-	  					verify[0] = password[0];
-	  					verify[1] = password[1];
-	  					verify[2] = password[2];
-	  					verify[3] = password[3];
-	  					setpassword = 3;
-	  					state = 0;
-	  				}
-	  				else if (setpassword == 1){
-	  					if (password[0] == key[0] && password[1] == key[1] && password[2] == key[3]
-	  											&& password[3] == key[4]){
-	  						setpassword = 2;
-	  					}else{
-	  						setpassword = 0;
-	  					}
-	  					state = 0;
-	  				}
-	  				else if (password[0] == 15 && password[1] == 1 && password[2] == 2
-	  						&& password[3] == 3) {
-	  					state = 0;
-	  					setpassword = 1;
-	  				} else if (password[0] == 15 && password[1] == 4 && password[2] ==
-	  						5 && password[3] == 6) {
-	  					//	RFID
-	  				}
-	  				else if (password[0] == key[0] && password[1] == key[1] && password[2] == key[3]
-	  						&& password[3] == key[4]) {
-	  					lock = 1;
-	  					state = 0;
-	  				}
-	  				else{
-	  					state = 0;
-	  				}
-	  				password[0] = -16;
-	  				password[1] = -16;
-	  				password[2] = -16;
-	  				password[3] = -16;
-	  			}
-	  		}
+	while (1) {
+		numbercar[0] = password[0] + 48;
+		numbercar[2] = password[1] + 48;
+		numbercar[4] = password[2] + 48;
+		numbercar[6] = password[3] + 48;
+		//		ST7735_WriteString(0, 51, "_ _ _ _", Font_16x26, YELLOW,BLACK);
+		ST7735_WriteString(0, 50, numbercar, Font_16x26, YELLOW, BLACK);
+		ButtonMatrixUpdate();
+		press[0] = ButtonMatrixState;
+		if (press[0] != press[1] && press[0] != 0) {
+			if (state == 0) {
+				if (ButtonMatrixState != 0b100000000000) {
+					password[0] = Button(ButtonMatrixState);
+					state = 1;
+				}
+			} else if (state == 1) {
+				if (ButtonMatrixState == 0b100000000000) {
+					password[0] = -16;
+					state = 0;
+				} else {
+					password[1] = Button(ButtonMatrixState);
+					state = 2;
+				}
+			} else if (state == 2) {
+				if (ButtonMatrixState == 0b100000000000) {
+					password[1] = -16;
+					state = 1;
+				} else {
+					password[2] = Button(ButtonMatrixState);
+					state = 3;
+				}
+			} else if (state == 3) {
+				if (ButtonMatrixState == 0b100000000000) {
+					password[2] = -16;
+					state = 2;
+				} else {
+					password[3] = Button(ButtonMatrixState);
+					state = 4;
+				}
+			}
+			if (state == 4) {
+				if (setpassword == 3) {
+					if (password[0] == verify[0] && password[1] == verify[1]
+							&& password[2] == verify[2]
+							&& password[3] == verify[3]) {
+						key[0] = verify[0];
+						key[1] = verify[1];
+						key[2] = verify[2];
+						key[3] = verify[3];
+					}
+					setpassword = 0;
+					state = 0;
+				} else if (setpassword == 2) {
+					verify[0] = password[0];
+					verify[1] = password[1];
+					verify[2] = password[2];
+					verify[3] = password[3];
+					setpassword = 3;
+					state = 0;
+				} else if (setpassword == 1) {
+					if (password[0] == key[0] && password[1] == key[1]
+							&& password[2] == key[3] && password[3] == key[4]) {
+						setpassword = 2;
+					} else {
+						setpassword = 0;
+					}
+					state = 0;
+				} else if (password[0] == 15 && password[1] == 1
+						&& password[2] == 2 && password[3] == 3) {
+					state = 0;
+					setpassword = 1;
+				} else if (password[0] == 15 && password[1] == 4
+						&& password[2] == 5 && password[3] == 6) {
+					//	RFID
+				} else if (password[0] == key[0] && password[1] == key[1]
+						&& password[2] == key[3] && password[3] == key[4]) {
+					lock = 1;
+					state = 0;
+				} else {
+					state = 0;
+				}
+				password[0] = -16;
+				password[1] = -16;
+				password[2] = -16;
+				password[3] = -16;
+			}
+		}
 
-	  		press[1] = press[0];
+		press[1] = press[0];
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+	}
   /* USER CODE END 3 */
 }
 
@@ -300,7 +311,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLM = 1;
   RCC_OscInitStruct.PLL.PLLN = 120;
   RCC_OscInitStruct.PLL.PLLP = 2;
-  RCC_OscInitStruct.PLL.PLLQ = 2;
+  RCC_OscInitStruct.PLL.PLLQ = 6;
   RCC_OscInitStruct.PLL.PLLR = 2;
   RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_3;
   RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
@@ -374,6 +385,54 @@ static void MX_ETH_Init(void)
   /* USER CODE BEGIN ETH_Init 2 */
 
   /* USER CODE END ETH_Init 2 */
+
+}
+
+/**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES_TXONLY;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 0x0;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  hspi1.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
+  hspi1.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
+  hspi1.Init.TxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
+  hspi1.Init.RxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
+  hspi1.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
+  hspi1.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
+  hspi1.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
+  hspi1.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_ENABLE;
+  hspi1.Init.IOSwap = SPI_IO_SWAP_DISABLE;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
 
 }
 
@@ -462,6 +521,22 @@ static void MX_USB_OTG_FS_PCD_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -486,10 +561,13 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOE, GPIO_PIN_13, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(USB_OTG_FS_PWR_EN_GPIO_Port, USB_OTG_FS_PWR_EN_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOD, USB_OTG_FS_PWR_EN_Pin|LCDc_d_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOG, GPIO_PIN_14, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(LCDcs_GPIO_Port, LCDcs_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOG, LCDreset_Pin|GPIO_PIN_14, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_SET);
@@ -523,12 +601,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : USB_OTG_FS_PWR_EN_Pin */
-  GPIO_InitStruct.Pin = USB_OTG_FS_PWR_EN_Pin;
+  /*Configure GPIO pins : USB_OTG_FS_PWR_EN_Pin LCDcs_Pin LCDc_d_Pin */
+  GPIO_InitStruct.Pin = USB_OTG_FS_PWR_EN_Pin|LCDcs_Pin|LCDc_d_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(USB_OTG_FS_PWR_EN_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
   /*Configure GPIO pin : USB_OTG_FS_OVCR_Pin */
   GPIO_InitStruct.Pin = USB_OTG_FS_OVCR_Pin;
@@ -541,6 +619,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LCDreset_Pin */
+  GPIO_InitStruct.Pin = LCDreset_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LCDreset_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PG12 */
   GPIO_InitStruct.Pin = GPIO_PIN_12;
@@ -661,11 +746,10 @@ int Button( ButtonMatrixState) {
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+	/* User can add his own implementation to report the HAL error return state */
+	__disable_irq();
+	while (1) {
+	}
   /* USER CODE END Error_Handler_Debug */
 }
 

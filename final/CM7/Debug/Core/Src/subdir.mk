@@ -5,6 +5,9 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../Core/Src/GFX_FUNCTIONS.c \
+../Core/Src/ST7735.c \
+../Core/Src/fonts.c \
 ../Core/Src/main.c \
 ../Core/Src/stm32h7xx_hal_msp.c \
 ../Core/Src/stm32h7xx_it.c \
@@ -12,6 +15,9 @@ C_SRCS += \
 ../Core/Src/sysmem.c 
 
 OBJS += \
+./Core/Src/GFX_FUNCTIONS.o \
+./Core/Src/ST7735.o \
+./Core/Src/fonts.o \
 ./Core/Src/main.o \
 ./Core/Src/stm32h7xx_hal_msp.o \
 ./Core/Src/stm32h7xx_it.o \
@@ -19,6 +25,9 @@ OBJS += \
 ./Core/Src/sysmem.o 
 
 C_DEPS += \
+./Core/Src/GFX_FUNCTIONS.d \
+./Core/Src/ST7735.d \
+./Core/Src/fonts.d \
 ./Core/Src/main.d \
 ./Core/Src/stm32h7xx_hal_msp.d \
 ./Core/Src/stm32h7xx_it.d \
@@ -33,7 +42,7 @@ Core/Src/%.o: ../Core/Src/%.c Core/Src/subdir.mk
 clean: clean-Core-2f-Src
 
 clean-Core-2f-Src:
-	-$(RM) ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/stm32h7xx_hal_msp.d ./Core/Src/stm32h7xx_hal_msp.o ./Core/Src/stm32h7xx_it.d ./Core/Src/stm32h7xx_it.o ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/sysmem.d ./Core/Src/sysmem.o
+	-$(RM) ./Core/Src/GFX_FUNCTIONS.d ./Core/Src/GFX_FUNCTIONS.o ./Core/Src/ST7735.d ./Core/Src/ST7735.o ./Core/Src/fonts.d ./Core/Src/fonts.o ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/stm32h7xx_hal_msp.d ./Core/Src/stm32h7xx_hal_msp.o ./Core/Src/stm32h7xx_it.d ./Core/Src/stm32h7xx_it.o ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/sysmem.d ./Core/Src/sysmem.o
 
 .PHONY: clean-Core-2f-Src
 

@@ -61,6 +61,10 @@ void Error_Handler(void);
 #define B1_GPIO_Port GPIOC
 #define LD1_Pin GPIO_PIN_0
 #define LD1_GPIO_Port GPIOB
+#define RFIDreset_Pin GPIO_PIN_15
+#define RFIDreset_GPIO_Port GPIOE
+#define RFIDcs_Pin GPIO_PIN_11
+#define RFIDcs_GPIO_Port GPIOB
 #define LD3_Pin GPIO_PIN_14
 #define LD3_GPIO_Port GPIOB
 #define STLINK_RX_Pin GPIO_PIN_8

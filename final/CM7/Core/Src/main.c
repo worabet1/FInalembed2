@@ -106,8 +106,11 @@ uint32_t ButtonMatrixTimestamp = 0;
 int status_write = 0;
 int card_data[16];
 int setRFID = 0;
-int lockcount[2] = {0,0};
+int lockcount[2] = { 0, 0 };
 int locktimestamp = 0;
+int slot = 0;
+int writecount[2] = {0,0};
+int writetimestamp = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -241,13 +244,19 @@ int main(void) {
 		findcard = MFRC522_Request(0x26, cardstr);
 		if (findcard == 0) {
 			if (write == 0) {
-				MFRC522_Read(4, uid);
-				if(1 == keyRFID){
-					lock = 1;
+				MFRC522_Read(10, uid);
+				int h;
+				for (h = 0; h < 16; ++h) {
+					if (uid[0] == keyRFID[h]) {
+						lock = 1;
+					}
 				}
 			} else {
 				write = 0;
-				status_write = MFRC522_Write(4, card_data);
+				MFRC522_Read(0, uid);
+				keyRFID[slot] = uid[0];
+				slot = slot + 1;
+//				status_write = MFRC522_Write(4, card_data);
 			}
 		}
 
@@ -257,31 +266,49 @@ int main(void) {
 		numbercar[6] = password[3] + 48;
 		//		ST7735_WriteString(0, 51, "_ _ _ _", Font_16x26, YELLOW,BLACK);
 		ST7735_WriteString(0, 50, numbercar, Font_16x26, YELLOW, BLACK);
+
 		if (lock == 0) {
+			HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
 			ST7735_WriteString(0, 0, "LOCK  ", Font_16x26, RED, BLACK);
 		} else {
+			HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
 			ST7735_WriteString(0, 0, "UNLOCK", Font_16x26, GREEN, BLACK);
 		}
-		if(setpassword == 1 || setRFID == 1){
-			ST7735_WriteString(0, 100, "Enter your password", Font_7x10, GREEN, BLACK);
-		}
-		else if(setpassword == 2){
-			ST7735_WriteString(0, 100, "Enter your new password", Font_7x10, GREEN, BLACK);
-		}
-		else if(setpassword == 3){
-					ST7735_WriteString(0, 100, "One more time           ", Font_7x10, GREEN, BLACK);
-				}
-		else{
-			ST7735_WriteString(0, 100, "                                    ", Font_16x26, GREEN, BLACK);
+		if (setpassword == 1 || setRFID == 1) {
+			ST7735_WriteString(0, 100, "Enter your password", Font_7x10, GREEN,
+					BLACK);
+		} else if (setpassword == 2) {
+			ST7735_WriteString(0, 100, "Enter your new password", Font_7x10,
+					GREEN, BLACK);
+		} else if (setpassword == 3) {
+			ST7735_WriteString(0, 100, "One more time           ", Font_7x10,
+					GREEN, BLACK);
+		} else if (write == 1) {
+			ST7735_WriteString(0, 100, "Ready to write            ", Font_7x10, MAGENTA,
+					BLACK);
+		} else {
+			ST7735_WriteString(0, 100,
+					"                                           ", Font_7x10,
+					GREEN, BLACK);
 		}
 		lockcount[0] = lock;
-		if(lockcount[0] == 1 && lockcount[1] == 0){
+		if (lockcount[0] == 1 && lockcount[1] == 0) {
 			locktimestamp = HAL_GetTick();
 		}
-		if (HAL_GetTick() - locktimestamp >= 10000){
+		if (HAL_GetTick() - locktimestamp >= 10000) {
 			lock = 0;
 		}
 		lockcount[1] = lockcount[0];
+
+		writecount[0] = write;
+		if (writecount[0] == 1 && writecount[1] == 0) {
+			writetimestamp = HAL_GetTick();
+		}
+		if (HAL_GetTick() - writetimestamp >= 10000) {
+			write = 0;
+		}
+		writecount[1] = writecount[0];
+
 		ButtonMatrixUpdate();
 		press[0] = ButtonMatrixState;
 
@@ -998,9 +1025,9 @@ char MFRC522_Request(char reqMode, char *TagType) {
 	TagType[0] = reqMode;
 
 	status = MFRC522_ToCard(0x0C, TagType, 1, TagType, &backBits);
-	if ((status != 0) || (backBits != 0x10)) {
-		status = 2;
-	}
+//	if ((status != 0) || (backBits != 0x10)) {
+//		status = 2;
+//	}
 
 	return status;
 }

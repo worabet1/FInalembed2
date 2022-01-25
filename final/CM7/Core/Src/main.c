@@ -113,6 +113,15 @@ static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 void ButtonMatrixUpdate();
 int Button( ButtonMatrixState);
+void Write_MFRC522(char addr, char val);
+char Read_MFRC522(char addr);
+char MFRC522_ToCard(char command, char *sendData, char sendLen, char *backData, int *backLen);
+void SetBitMask(char reg, char mask);
+void ClearBitMask(char reg, char mask);
+char MFRC522_Request(char reqMode, char *TagType);
+void CalulateCRC(char *pIndata, char len, char *pOutData);
+char MFRC522_Write(char blockAddr, char *writeData);
+char MFRC522_Read(char blockAddr, char *recvData);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -184,13 +193,27 @@ int main(void)
   MX_USB_OTG_FS_PCD_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
+
 	ST7735_Init(2);
 	fillScreen(BLACK);
+	    Write_MFRC522(0x2A, 0x80);
+	    Write_MFRC522(0x2B, 0xA9); //0x34); // TModeReg[3..0] + TPrescalerReg
+	    Write_MFRC522(0x2D, 0x03); //30);
+	    Write_MFRC522(0x2C, 0xE8); //0);
+	    Write_MFRC522(0x15, 0x40);     // force 100% ASK modulation
+	    Write_MFRC522(0x11, 0x3D);       // CRC Initial value 0x6363
+	    char tmp1;
+	    tmp1 = Read_MFRC522(0x14);
+	    Write_MFRC522(0x14, tmp1 | 0x03); // antenna on
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
+				for (int i = 0; i < 16; i++) {
+						  cardstr[i] = 0;
+					  }
+				findcard = MFRC522_Request(0x26,cardstr);
 		numbercar[0] = password[0] + 48;
 		numbercar[2] = password[1] + 48;
 		numbercar[4] = password[2] + 48;
@@ -795,6 +818,239 @@ int Button( ButtonMatrixState) {
 		break;
 	}
 	return pass;
+}
+
+void Write_MFRC522(char addr, char val) {
+	char addr_bits = (((addr<<1) & 0x7E));
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11, GPIO_PIN_RESET);
+  HAL_SPI_Transmit(&hspi2, &addr_bits, 1, 500);
+  HAL_SPI_Transmit(&hspi2, &val, 1, 500);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11, GPIO_PIN_SET);
+}
+char Read_MFRC522(char addr) {
+  char rx_bits;
+  char addr_bits = (((addr<<1) & 0x7E) | 0x80);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11, GPIO_PIN_RESET);
+  HAL_SPI_Transmit(&hspi2, &addr_bits, 1, 500);
+  HAL_SPI_Receive(&hspi2, &rx_bits, 1, 500);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11, GPIO_PIN_SET);
+  return (char) rx_bits; // return the rx bits, casting to an 8 bit int and chopping off the upper 24 bits
+}
+char MFRC522_ToCard(char command, char *sendData, char sendLen, char *backData, int *backLen)
+{
+  char status = 2;
+  char irqEn = 0x00;
+  char waitIRq = 0x00;
+  char lastBits;
+  char n;
+  int i;
+
+  switch (command)
+  {
+    case 0x0E:     // Certification cards close
+      {
+        irqEn = 0x12;
+        waitIRq = 0x10;
+        break;
+      }
+    case 0x0C:  // Transmit FIFO data
+      {
+        irqEn = 0x77;
+        waitIRq = 0x30;
+        break;
+      }
+    default:
+      break;
+  }
+
+  Write_MFRC522(0x02, irqEn|0x80);  // Interrupt request
+  ClearBitMask(0x04, 0x80);         // Clear all interrupt request bit
+  SetBitMask(0x0A, 0x80);         // FlushBuffer=1, FIFO Initialization
+
+  Write_MFRC522(0x01, 0x00);    // NO action; Cancel the current command
+
+  // Writing data to the FIFO
+  for (i=0; i<sendLen; i++)
+  {
+    Write_MFRC522(0x09, sendData[i]);
+  }
+
+  // Execute the command
+  Write_MFRC522(0x01, command);
+  if (command == 0x0C)
+  {
+    SetBitMask(0x0D, 0x80);      // StartSend=1,transmission of data starts
+  }
+
+  // Waiting to receive data to complete
+  i = 2000;	// i according to the clock frequency adjustment, the operator M1 card maximum waiting time 25ms
+  do
+  {
+    // CommIrqReg[7..0]
+    // Set1 TxIRq RxIRq IdleIRq HiAlerIRq LoAlertIRq ErrIRq TimerIRq
+    n = Read_MFRC522(0x04);
+    i--;
+  }
+  while ((i!=0) && !(n&0x01) && !(n&waitIRq));
+
+  ClearBitMask(0x0D, 0x80);      // StartSend=0
+
+  if (i != 0)
+  {
+    if(!(Read_MFRC522(0x06) & 0x1B))  // BufferOvfl Collerr CRCErr ProtecolErr
+    {
+      status = 0;
+      if (n & irqEn & 0x01)
+      {
+        status = 1;             // ??
+      }
+
+      if (command == 0x0C)
+      {
+        n = Read_MFRC522(0x0A);
+        lastBits = Read_MFRC522(0x0C) & 0x07;
+        if (lastBits)
+        {
+          *backLen = (n-1)*8 + lastBits;
+        }
+        else
+        {
+          *backLen = n*8;
+        }
+
+        if (n == 0)
+        {
+          n = 1;
+        }
+        if (n > 16)
+        {
+          n = 16;
+        }
+
+        // Reading the received data in FIFO
+        for (i=0; i<n; i++)
+        {
+          backData[i] = Read_MFRC522(0x09);
+        }
+      }
+    }
+    else {
+      //printf("~~~ buffer overflow, collerr, crcerr, or protecolerr\r\n");
+      status = 2;
+    }
+  }
+  else {
+    //printf("~~~ request timed out\r\n");
+  }
+
+  return status;
+}
+char MFRC522_Request(char reqMode, char *TagType)
+{
+  char status;
+  int backBits; // The received data bits
+
+  Write_MFRC522(0x0D, 0x07);   // TxLastBists = BitFramingReg[2..0]
+
+  TagType[0] = reqMode;
+
+  status = MFRC522_ToCard(0x0C, TagType, 1, TagType, &backBits);
+  if ((status != 0) || (backBits != 0x10)) {
+    status = 2;
+  }
+
+  return status;
+}
+void ClearBitMask(char reg, char mask)
+{
+    char tmp;
+    tmp = Read_MFRC522(reg);
+    Write_MFRC522(reg, tmp & (~mask));  // clear bit mask
+}
+void SetBitMask(char reg, char mask)
+{
+    char tmp;
+    tmp = Read_MFRC522(reg);
+    Write_MFRC522(reg, tmp | mask);  // set bit mask
+}
+char MFRC522_Read(char blockAddr, char *recvData)
+{
+  char status;
+  int unLen;
+
+  recvData[0] = 0x30;
+  recvData[1] = blockAddr;
+  CalulateCRC(recvData,2, &recvData[2]);
+  status = MFRC522_ToCard(0x0C, recvData, 4, recvData, &unLen);
+
+  if ((status != 0) || (unLen != 0x90))
+  {
+    status = 2;
+  }
+
+  return status;
+}
+char MFRC522_Write(char blockAddr, char *writeData)
+{
+  char status;
+  int recvBits;
+  char i;
+  char buff[18];
+
+  buff[0] = 0xA0;
+  buff[1] = blockAddr;
+  CalulateCRC(buff, 2, &buff[2]);
+  status = MFRC522_ToCard(0x0C, buff, 4, buff, &recvBits);
+
+  if ((status != 0))// || (recvBits != 4) || ((buff[0] & 0x0F) != 0x0A))
+  {
+    status = 2;
+  }
+
+  if (status == 0)
+  {
+    for (i=0; i<16; i++)		//Data to the FIFO write 16Byte
+    {
+      buff[i] = *(writeData+i);
+    }
+    CalulateCRC(buff, 16, &buff[16]);
+    status = MFRC522_ToCard(0x0C, buff, 18, buff, &recvBits);
+
+    if ((status != 0))// || (recvBits != 4) || ((buff[0] & 0x0F) != 0x0A))
+    {
+      status = 2;
+    }
+  }
+
+  return status;
+}
+void CalulateCRC(char *pIndata, char len, char *pOutData)
+{
+  char i, n;
+
+  ClearBitMask(0x05, 0x04);			//CRCIrq = 0
+  SetBitMask(0x0A, 0x80);			//Clear the FIFO pointer
+  //Write_MFRC522(CommandReg, PCD_IDLE);
+
+  //Writing data to the FIFO
+  for (i=0; i<len; i++)
+  {
+    Write_MFRC522(0x09, *(pIndata+i));
+  }
+  Write_MFRC522(0x01, 0x03);
+
+  //Wait CRC calculation is complete
+  i = 0xFF;
+  do
+  {
+    n = Read_MFRC522(0x05);
+    i--;
+  }
+  while ((i!=0) && !(n&0x04));			//CRCIrq = 1
+
+  //Read CRC calculation result
+  pOutData[0] = Read_MFRC522(0x22);
+  pOutData[1] = Read_MFRC522(0x21);
 }
 /* USER CODE END 4 */
 

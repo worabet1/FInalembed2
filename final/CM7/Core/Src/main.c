@@ -214,15 +214,15 @@ int main(void) {
 
 	ST7735_Init(2);
 	fillScreen(BLACK);
-	Write_MFRC522(0x2A, 0x80);
-	Write_MFRC522(0x2B, 0xA9); //0x34); // TModeReg[3..0] + TPrescalerReg
-	Write_MFRC522(0x2D, 0x03); //30);
-	Write_MFRC522(0x2C, 0xE8); //0);
+	Write_MFRC522(0x2A, 0x80); // ประกาศ timer ภายในเป็น auto
+	Write_MFRC522(0x2B, 0xA9); //เซ็ทความถี่ของ timer ด้วย prescaler // TModeReg[3..0] + TPrescalerReg
+	Write_MFRC522(0x2D, 0x03); //30); set เวลา reload lowerbit
+	Write_MFRC522(0x2C, 0xE8); //0); set เวลา reload higher bit
 	Write_MFRC522(0x15, 0x40);     // force 100% ASK modulation
-	Write_MFRC522(0x11, 0x3D);       // CRC Initial value 0x6363
+	Write_MFRC522(0x11, 0x3D);       // transmitter ส่งได้เมื่อมี RF field , MFIN เป็น active high ,CRC Initial value 0x6363
 	char tmp1;
 	tmp1 = Read_MFRC522(0x14);
-	Write_MFRC522(0x14, tmp1 | 0x03); // antenna on
+	Write_MFRC522(0x14, tmp1 | 0x03); // antenna on ทำให้ tx1,2 ส่งด้วยความถี่ 13.56 MHz
 	card_data[0] = 0xFF;
 	card_data[1] = 0xFF;
 	card_data[2] = 0xFF;
@@ -247,7 +247,7 @@ int main(void) {
 		for (int i = 0; i < 16; i++) {
 			cardstr[i] = 0;
 		}
-		findcard = MFRC522_Request(0x26, cardstr);
+		findcard = MFRC522_Request(0x26, cardstr); // ตรวจหวบัตร โดยใส่ 26 เพื่อเป็น การ request type A ออกมา
 		if (findcard == 0) {
 			if (write == 0) {
 				if (MFRC522_Anticoll(cardstr) == 0) {
@@ -966,13 +966,13 @@ char MFRC522_ToCard(char command, char *sendData, char sendLen, char *backData,
 	int i;
 
 	switch (command) {
-	case 0x0E:     // Certification cards close
+	case 0x0E:     // Certification cards close เป็นผู้อ่านรหัสบัตร
 	{
 		irqEn = 0x12;
 		waitIRq = 0x10;
 		break;
 	}
-	case 0x0C:  // Transmit FIFO data
+	case 0x0C:  // Transmit FIFO data transceive command
 	{
 		irqEn = 0x77;
 		waitIRq = 0x30;
@@ -990,11 +990,11 @@ char MFRC522_ToCard(char command, char *sendData, char sendLen, char *backData,
 
 	// Writing data to the FIFO
 	for (i = 0; i < sendLen; i++) {
-		Write_MFRC522(0x09, sendData[i]);
+		Write_MFRC522(0x09, sendData[i]); // เขียน data ลง FIFO buffer
 	}
 
 	// Execute the command
-	Write_MFRC522(0x01, command);
+	Write_MFRC522(0x01, command); // ประกาศว่าเป็น command
 	if (command == 0x0C) {
 		SetBitMask(0x0D, 0x80);      // StartSend=1,transmission of data starts
 	}
@@ -1004,39 +1004,39 @@ char MFRC522_ToCard(char command, char *sendData, char sendLen, char *backData,
 	do {
 		// CommIrqReg[7..0]
 		// Set1 TxIRq RxIRq IdleIRq HiAlerIRq LoAlertIRq ErrIRq TimerIRq
-		n = Read_MFRC522(0x04);
+		n = Read_MFRC522(0x04); // อ่านสถานะของ interrupt
 		i--;
-	} while ((i != 0) && !(n & 0x01) && !(n & waitIRq));
+	} while ((i != 0) && !(n & 0x01) && !(n & waitIRq)); // รอให้ module ส่ง interrupt กลับมาว่าสำเร็จแล้วจึงหลุดออกจากลูป
 
 	ClearBitMask(0x0D, 0x80);      // StartSend=0
 
-	if (i != 0) {
+	if (i != 0) { // ถ้าไม่ time out
 		if (!(Read_MFRC522(0x06) & 0x1B)) // BufferOvfl Collerr CRCErr ProtecolErr
 		{
 			status = 0;
 			if (n & irqEn & 0x01) {
-				status = 1;             // ??
+				status = 1;             // ถ้าได้รับ interrupt กลับมาแต่ผิดฟอร์มจะขึ้น status เป็นงง
 			}
 
-			if (command == 0x0C) {
-				n = Read_MFRC522(0x0A);
-				lastBits = Read_MFRC522(0x0C) & 0x07;
+			if (command == 0x0C) { // ถ้า command เป็น transcieve
+				n = Read_MFRC522(0x0A); // อ่านต่าจำนวน bytes ที่กลับมาใน FIFO buffer
+				lastBits = Read_MFRC522(0x0C) & 0x07; // ตรวจสอบว่า lastbit เป็น 000 ถูกต้องหรือไม่
 				if (lastBits) {
-					*backLen = (n - 1) * 8 + lastBits;
+					*backLen = (n - 1) * 8 + lastBits; // ถ้าไม้ใช่ก็จะเพิ่มจำนวน bit ที่ส่งกลับมา
 				} else {
-					*backLen = n * 8;
+					*backLen = n * 8; // ถ้าใช่ก็คูณ 8 เพื่อให้เป็นจำนวน bit
 				}
 
 				if (n == 0) {
-					n = 1;
+					n = 1; //จำกัดขั้นต่ำเปน1
 				}
 				if (n > 16) {
-					n = 16;
+					n = 16; // จำกัดอย่างมากเป็น 16
 				}
 
 				// Reading the received data in FIFO
 				for (i = 0; i < n; i++) {
-					backData[i] = Read_MFRC522(0x09);
+					backData[i] = Read_MFRC522(0x09); // อ่านค่าทั้งหมดใน FIFO buffer
 				}
 			}
 		} else {
@@ -1053,11 +1053,11 @@ char MFRC522_Request(char reqMode, char *TagType) {
 	char status;
 	int backBits; // The received data bits
 
-	Write_MFRC522(0x0D, 0x07);   // TxLastBists = BitFramingReg[2..0]
+	Write_MFRC522(0x0D, 0x07);   // เซ็ทว่าส่งจบด้วย 111
 
 	TagType[0] = reqMode;
 
-	status = MFRC522_ToCard(0x0C, TagType, 1, TagType, &backBits);
+	status = MFRC522_ToCard(0x0C, TagType, 1, TagType, &backBits); //ฟังขั่นติดต่อระหว่างบัตรกับ module
 //	if ((status != 0) || (backBits != 0x10)) {
 //		status = 2;
 //	}
@@ -1153,9 +1153,9 @@ char MFRC522_Anticoll(char *serNum) {
 
 	//ClearBitMask(Status2Reg, 0x08);		//TempSensclear
 	//ClearBitMask(CollReg,0x80);			//ValuesAfterColl
-	Write_MFRC522(0x0D, 0x00);		//TxLastBists = BitFramingReg[2..0]
+	Write_MFRC522(0x0D, 0x00);		// สั่งให้ lastbit เป็น 000
 
-	serNum[0] = 0x93;
+	serNum[0] = 0x93; // anti collision เพื่อให้ได้ uid กลับมา
 	serNum[1] = 0x20;
 	status = MFRC522_ToCard(0x0C, serNum, 2, serNum, &unLen);
 

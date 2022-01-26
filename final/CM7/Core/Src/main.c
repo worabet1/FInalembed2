@@ -109,8 +109,13 @@ int setRFID = 0;
 int lockcount[2] = { 0, 0 };
 int locktimestamp = 0;
 int slot = 0;
-int writecount[2] = {0,0};
+int writecount[2] = { 0, 0 };
 int writetimestamp = 0;
+int errortimestamp[5] = {-400000,-330000,-260000,-190000,-100000};
+int errorpointer = 0;
+int displaylock = 0;
+int displaycount[2] = {0,0};
+int displaytimestamp = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -135,6 +140,7 @@ char MFRC522_Request(char reqMode, char *TagType);
 void CalulateCRC(char *pIndata, char len, char *pOutData);
 char MFRC522_Write(char blockAddr, char *writeData);
 char MFRC522_Read(char blockAddr, char *recvData);
+char MFRC522_Anticoll(char *serNum);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -244,7 +250,10 @@ int main(void) {
 		findcard = MFRC522_Request(0x26, cardstr);
 		if (findcard == 0) {
 			if (write == 0) {
-				MFRC522_Read(10, uid);
+				if (MFRC522_Anticoll(cardstr) == 0) {
+					uid[0] = cardstr[0];
+				}
+//				MFRC522_Read(0, uid);
 				int h;
 				for (h = 0; h < 16; ++h) {
 					if (uid[0] == keyRFID[h]) {
@@ -252,10 +261,12 @@ int main(void) {
 					}
 				}
 			} else {
-				write = 0;
-				MFRC522_Read(0, uid);
-				keyRFID[slot] = uid[0];
-				slot = slot + 1;
+				if (MFRC522_Anticoll(cardstr) == 0) {
+					uid[0] = cardstr[0];
+					write = 0;
+					keyRFID[slot] = uid[0];
+					slot = slot + 1;
+				}
 //				status_write = MFRC522_Write(4, card_data);
 			}
 		}
@@ -265,8 +276,29 @@ int main(void) {
 		numbercar[4] = password[2] + 48;
 		numbercar[6] = password[3] + 48;
 		//		ST7735_WriteString(0, 51, "_ _ _ _", Font_16x26, YELLOW,BLACK);
-		ST7735_WriteString(0, 50, numbercar, Font_16x26, YELLOW, BLACK);
-
+		if(displaylock == 1){
+			ST7735_WriteString(0, 50, "DISPLAY LOCK                                       ", Font_16x26,BLUE, BLACK);
+		}else{
+			ST7735_WriteString(0, 50, numbercar, Font_16x26, YELLOW, BLACK);
+			if (setpassword == 1 || setRFID == 1) {
+				ST7735_WriteString(0, 100, "Enter your password", Font_7x10, GREEN,
+				BLACK);
+			} else if (setpassword == 2) {
+				ST7735_WriteString(0, 100, "Enter your new password", Font_7x10,
+				GREEN, BLACK);
+			} else if (setpassword == 3) {
+				ST7735_WriteString(0, 100, "One more time           ", Font_7x10,
+				GREEN, BLACK);
+			} else if (write == 1) {
+				ST7735_WriteString(0, 100, "Ready to write            ", Font_7x10,
+						MAGENTA,
+						BLACK);
+			} else {
+				ST7735_WriteString(0, 75,
+						"                                                                                 ", Font_7x10,
+						GREEN, BLACK);
+			}
+		}
 		if (lock == 0) {
 			HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
 			ST7735_WriteString(0, 0, "LOCK  ", Font_16x26, RED, BLACK);
@@ -274,23 +306,7 @@ int main(void) {
 			HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
 			ST7735_WriteString(0, 0, "UNLOCK", Font_16x26, GREEN, BLACK);
 		}
-		if (setpassword == 1 || setRFID == 1) {
-			ST7735_WriteString(0, 100, "Enter your password", Font_7x10, GREEN,
-					BLACK);
-		} else if (setpassword == 2) {
-			ST7735_WriteString(0, 100, "Enter your new password", Font_7x10,
-					GREEN, BLACK);
-		} else if (setpassword == 3) {
-			ST7735_WriteString(0, 100, "One more time           ", Font_7x10,
-					GREEN, BLACK);
-		} else if (write == 1) {
-			ST7735_WriteString(0, 100, "Ready to write            ", Font_7x10, MAGENTA,
-					BLACK);
-		} else {
-			ST7735_WriteString(0, 100,
-					"                                           ", Font_7x10,
-					GREEN, BLACK);
-		}
+
 		lockcount[0] = lock;
 		if (lockcount[0] == 1 && lockcount[1] == 0) {
 			locktimestamp = HAL_GetTick();
@@ -309,10 +325,18 @@ int main(void) {
 		}
 		writecount[1] = writecount[0];
 
+		displaycount[0] = displaylock;
+		if (displaycount[0] == 1 && displaycount[1] == 0){
+			displaytimestamp = HAL_GetTick();
+		}
+		if (HAL_GetTick() - displaytimestamp >= 15000) {
+					displaylock = 0;
+				}
+		displaycount[1] = displaycount[0];
 		ButtonMatrixUpdate();
 		press[0] = ButtonMatrixState;
 
-		if (press[0] != press[1] && press[0] != 0) {
+		if (press[0] != press[1] && press[0] != 0 && displaylock == 0) {
 			if (state == 0) {
 				if (ButtonMatrixState != 0b100000000000) {
 					password[0] = Button(ButtonMatrixState);
@@ -387,6 +411,8 @@ int main(void) {
 					lock = 1;
 					state = 0;
 				} else {
+					errortimestamp[errorpointer] = HAL_GetTick();
+					errorpointer = (errorpointer+1)%5;
 					state = 0;
 				}
 				password[0] = -16;
@@ -395,7 +421,14 @@ int main(void) {
 				password[3] = -16;
 			}
 		}
-
+		if(errortimestamp[((errorpointer-1)+5)%5] - errortimestamp[(errorpointer)%5] <= 60000){
+			displaylock = 1;
+			errortimestamp[0] = -400000;
+			errortimestamp[1] = -330000;
+			errortimestamp[2] = -260000;
+			errortimestamp[3] = -190000;
+			errortimestamp[4] = -100000;
+		}
 		press[1] = press[0];
 		/* USER CODE END WHILE */
 
@@ -1111,6 +1144,34 @@ void CalulateCRC(char *pIndata, char len, char *pOutData) {
 	//Read CRC calculation result
 	pOutData[0] = Read_MFRC522(0x22);
 	pOutData[1] = Read_MFRC522(0x21);
+}
+char MFRC522_Anticoll(char *serNum) {
+	char status;
+	char i;
+	char serNumCheck = 0;
+	int unLen;
+
+	//ClearBitMask(Status2Reg, 0x08);		//TempSensclear
+	//ClearBitMask(CollReg,0x80);			//ValuesAfterColl
+	Write_MFRC522(0x0D, 0x00);		//TxLastBists = BitFramingReg[2..0]
+
+	serNum[0] = 0x93;
+	serNum[1] = 0x20;
+	status = MFRC522_ToCard(0x0C, serNum, 2, serNum, &unLen);
+
+	if (status == 0) {
+		//Check card serial number
+		for (i = 0; i < 4; i++) {
+			serNumCheck ^= serNum[i];
+		}
+		if (serNumCheck != serNum[i]) {
+			status = 2;
+		}
+	}
+
+	//SetBitMask(CollReg, 0x80);		//ValuesAfterColl=1
+
+	return status;
 }
 /* USER CODE END 4 */
 
